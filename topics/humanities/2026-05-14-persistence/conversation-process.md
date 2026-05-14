@@ -128,6 +128,96 @@ AI 进一步拆解了毅力的致命缺陷：
 
 ---
 
-## 留给以后看的一句话
+## 第六阶段：确立双线学习结构
+
+### 我的想法
+学习计划应该有两条线——技术线和人文线。今天的"坚持"属于人文线。之前学的 NATS、Timer 属于技术线。
+
+### 调整
+- 项目 README 更新为双线结构（技术线 + 人文线）
+- `topics/` 目录按 `tech/` 和 `humanities/` 分类
+- 双线并行：一天一个知识点，不堆数量
+
+---
+
+## 第七阶段：从学习到输出——建立公众号文章体系
+
+### 我的想法
+每天的学习笔记可以整理成一篇文章，推送到公众号，方便自己查看。
+
+### 研究方向
+- 搜索了微信公众号排版规范（字号、间距、配色、禁用项）
+- 文章是给自己读的，语气要自然、个人化——像讲给朋友听，不是教学文
+
+### 成果
+- 创建 `articles/` 目录
+- 第一篇文章：《我一直以为坚持靠的是毅力，直到我算了一笔账》
+- 文章用第一人称叙述，口语化，有停顿感
+- 自己写了 `to_wechat.py`：Markdown → 微信公众号 HTML 转换器
+
+---
+
+## 第八阶段：搭建一键发布流水线
+
+### 我的想法
+能不能直接调用公众号 API 把文章推到草稿箱？
+
+### 过程
+1. 配置 AppID 和 AppSecret（放在 `.env`，不入 git）
+2. 凭证最初写在了 README 里，及时移出（未进 git 历史）
+3. IP 白名单配置（当前机器 IP: 218.241.217.43）
+4. 第一次调用失败：缺少 `thumb_media_id`（封面图必填）
+5. 用 Pillow 自动生成 900×500 黑底白字封面图
+6. 上传封面 → 获取 media_id → 创建草稿成功
+
+### 最终工具链
+
+```
+python3 articles/publish.py articles/YYYY-MM-DD-主题.md
+```
+
+自动完成：提取标题摘要 → 转微信 HTML → 生成封面 → 上传 → 推送草稿箱
+
+---
+
+## 第九阶段：Git 管理与远程同步
+
+### 过程
+- topics 目录已有 git，remote 指向 `git@github.com:cutlady/study.git`
+- 将 git 从 topics/ 提升到 daily-learning/ 根目录
+- 纳入 articles/ 和 projects/
+- 配置 SSH key（id_ed25519, 8426084@qq.com）
+- GitHub deploy key 需开启 write access
+
+---
+
+## 第十阶段：确立"发布"工作流
+
+### 以后说"发布"时，自动执行：
+1. 将对话内容原样保存到 `conversation-process.md`
+2. 生成文章到 `articles/`
+3. 运行 `publish.py` 推送到公众号草稿箱
+4. git 提交并推送
+
+---
+
+## 今日产出清单
+
+```
+topics/humanities/2026-05-14-persistence/
+├── README.md                  # 学习笔记
+├── simulate.py                # 复利模拟
+├── system-design.md           # 个人系统 v1.0
+└── conversation-process.md    # 完整对话记录 ← 本文件
+
+articles/
+├── README.md
+├── .gitignore
+├── to_wechat.py              # Markdown → 微信 HTML
+├── publish.py                # Markdown → 公众号草稿箱
+└── 2026-05-14-坚持.md         # 公众号文章
+```
+
+---
 
 > 如果哪天系统崩了，不要怪自己。回来读这段对话，看看是哪个设计假设不成立了，然后迭代到 v1.1。系统设计的本质就是在崩溃中进化。
