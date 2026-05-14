@@ -240,10 +240,6 @@ def md_to_wechat_html(md_text):
             f'<p style="font-size:15px;color:#3f3f3f;line-height:1.75;margin:0 0 12px;">{text}</p>'
         )
         i += 1
-        out.append(
-            f'<p style="font-size:15px;color:#3f3f3f;line-height:1.75;margin:0 0 12px;">{text}</p>'
-        )
-        i += 1
 
     body = "\n".join(out)
     return f'<section style="padding:0 10px;">{body}</section>'
