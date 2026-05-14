@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>TreeCore Demo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: monospace; padding: 20px; background: #f5f5f5; }
+
+    .container { display: flex; gap: 20px; max-width: 1200px; margin: 0 auto; }
+
+    /* 左侧：树 */
+    .tree-panel {
+      flex: 1;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 16px;
+      height: 600px;
+      display: flex;
+      flex-direction: column;
+    }
+    .tree-panel h3 { margin-bottom: 12px; color: #333; }
+
+    /* 虚拟滚动容器 */
+    .virtual-scroll {
+      flex: 1;
+      overflow-y: auto;
+      position: relative;
+    }
+    .virtual-scroll-content {
+      position: relative;
+    }
+    .virtual-scroll-viewport {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+    }
+
+    .tree-node {
+      display: flex;
+      align-items: center;
+      height: 28px;
+      padding: 0 8px;
+      cursor: pointer;
+      border-radius: 3px;
+      user-select: none;
+      white-space: nowrap;
+    }
+    .tree-node:hover { background: #f0f7ff; }
+    .tree-node.selected { background: #e6f4ff; outline: 1px solid #91caff; }
+    .tree-node.disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .tree-node .indent { display: inline-block; width: 24px; flex-shrink: 0; }
+    .tree-node .arrow {
+      display: inline-block;
+      width: 16px;
+      text-align: center;
+      font-size: 10px;
+      color: #999;
+      flex-shrink: 0;
+    }
+    .tree-node .arrow.leaf { visibility: hidden; }
+    .tree-node .checkbox {
+      width: 16px;
+      height: 16px;
+      border: 1px solid #ccc;
+      border-radius: 3px;
+      margin-right: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: white;
+      background: white;
+      flex-shrink: 0;
+    }
+    .tree-node .checkbox.checked { background: #1677ff; border-color: #1677ff; }
+    .tree-node .checkbox.indeterminate { border-color: #1677ff; }
+    .tree-node .checkbox.disabled { background: #f5f5f5; border-color: #d9d9d9; }
+    .tree-node .label { margin-left: 4px; font-size: 14px; }
+
+    /* 右侧：控制面板 */
+    .control-panel {
+      width: 320px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .control-section {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 16px;
+    }
+    .control-section h4 { margin-bottom: 8px; color: #555; font-size: 13px; }
+
+    .btn-group { display: flex; flex-wrap: wrap; gap: 6px; }
+    button {
+      padding: 6px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: white;
+      cursor: pointer;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    button:hover { background: #f0f0f0; }
+    button.active { background: #1677ff; color: white; border-color: #1677ff; }
+
+    select {
+      padding: 6px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      width: 100%;
+    }
+
+    .state-display {
+      background: #1a1a2e;
+      color: #0f0;
+      padding: 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- 左侧：树渲染区域 -->
+    <div class="tree-panel">
+      <h3>TreeCore Demo</h3>
+      <div class="virtual-scroll" id="virtual-scroll">
+        <div class="virtual-scroll-content" id="virtual-content">
+          <div class="virtual-scroll-viewport" id="virtual-viewport"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右侧：控制面板 -->
+    <div class="control-panel">
+      <!-- 模式切换 -->
+      <div class="control-section">
+        <h4>选择模式</h4>
+        <div class="btn-group">
+          <button onclick="switchMode('none')" id="btn-none">无</button>
+          <button onclick="switchMode('single')" id="btn-single">单选</button>
+          <button onclick="switchMode('multi')" id="btn-multi">多选</button>
+        </div>
+      </div>
+
+      <!-- 级联模式（多选时） -->
+      <div class="control-section" id="cascade-section" style="display:none;">
+        <h4>父子联动</h4>
+        <div class="btn-group">
+          <button onclick="switchCascade('none')" id="btn-cascade-none">独立</button>
+          <button onclick="switchCascade('down')" id="btn-cascade-down">向下</button>
+          <button onclick="switchCascade('up')" id="btn-cascade-up">向上</button>
+          <button onclick="switchCascade('both')" id="btn-cascade-both">双向</button>
+        </div>
+      </div>
+
+      <!-- 展开/折叠 -->
+      <div class="control-section">
+        <h4>展开/折叠</h4>
+        <div class="btn-group">
+          <button onclick="tree.expandAll(); render()">全部展开</button>
+          <button onclick="tree.collapseAll(); render()">全部折叠</button>
+        </div>
+      </div>
+
+      <!-- 数据切换 -->
+      <div class="control-section">
+        <h4>数据集</h4>
+        <div class="btn-group">
+          <button onclick="loadSmallData()" id="btn-data-small" class="active">小数据(20)</button>
+          <button onclick="loadLargeData()" id="btn-data-large">大数据(1万)</button>
+        </div>
+      </div>
+
+      <!-- 当前状态 -->
+      <div class="control-section">
+        <h4>当前选中状态</h4>
+        <div class="state-display" id="state-display">无</div>
+      </div>
+
+      <!-- 节点总数 -->
+      <div class="control-section">
+        <h4>统计</h4>
+        <div id="stats" style="font-size:13px; color:#555;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="core/tree-core.js"></script>
+  <script>
+    // ===== 常量 =====
+    const NODE_HEIGHT = 28  // 每行高度，和 CSS .tree-node height 一致
+    const BUFFER_COUNT = 10 // 上下缓冲区多渲染的行数
+
+    // ===== 测试数据（小规模） =====
+    const mockData = [
+      {
+        id: 'local-1', label: '本地用户',
+        children: [
+          { id: 'user-1', label: '张三' },
+          { id: 'user-2', label: '李四', disabled: true },
+          { id: 'user-3', label: '王五' },
+        ]
+      },
+      {
+        id: 'domain-1', label: '域用户',
+        children: [
+          {
+            id: 'group-1', label: '开发组',
+            children: [
+              { id: 'local-1', label: '张三（域）' },
+              { id: 'dev-2', label: '赵六' },
+            ]
+          },
+          {
+            id: 'group-2', label: '测试组',
+            children: [
+              { id: 'test-1', label: '钱七' },
+              { id: 'test-2', label: '孙八', selectable: false },
+            ]
+          },
+        ]
+      },
+      {
+        id: 'sys-1', label: '系统账户',
+        children: [
+          { id: 'admin', label: 'Administrator', disabled: true },
+          { id: 'guest', label: 'Guest' },
+        ]
+      },
+    ]
+
+    // ===== 大规模数据生成器（10层，约1万节点） =====
+    function generateLargeData(totalTarget = 10000, maxDepth = 10) {
+      let counter = 0
+      const departments = ['研发部', '市场部', '运营部', '财务部', '人事部', '产品部', '设计部', '技术支持']
+      const roles = ['经理', '主管', '工程师', '分析师', '专员', '助理', '顾问', '总监']
+
+      function buildTree(depth) {
+        if (depth >= maxDepth || counter >= totalTarget) return []
+
+        const remaining = totalTarget - counter
+        const remainingDepth = maxDepth - depth
+        const branchCount = Math.min(
+          depth === 0 ? 8 : Math.ceil(remaining / remainingDepth / 3),
+          6,
+          remaining
+        )
+
+        const nodes = []
+        for (let i = 0; i < branchCount && counter < totalTarget; i++) {
+          counter++
+          const node = {
+            id: `n-${counter}`,
+            label: depth === 0
+              ? departments[i % departments.length]
+              : `${roles[i % roles.length]}-${counter}`,
+          }
+          const children = buildTree(depth + 1)
+          if (children.length > 0) node.children = children
+          if (counter % 37 === 0) node.disabled = true
+          if (counter % 53 === 0) node.selectable = false
+          nodes.push(node)
+        }
+        return nodes
+      }
+
+      return buildTree(0)
+    }
+
+    // ===== 状态 =====
+    let useLargeData = false
+    let largeData = null
+    let cachedVisibleNodes = []  // 缓存可见节点，避免重复计算
+
+    let tree = new TreeCore({
+      data: mockData,
+      selection: { mode: 'none', cascade: 'none' },
+    })
+
+    // ===== 虚拟滚动渲染 =====
+    const scrollContainer = document.getElementById('virtual-scroll')
+    const contentEl = document.getElementById('virtual-content')
+    const viewportEl = document.getElementById('virtual-viewport')
+
+    scrollContainer.addEventListener('scroll', onScroll)
+
+    function onScroll() {
+      requestAnimationFrame(renderViewport)
+    }
+
+    function render() {
+      const t0 = performance.now()
+      cachedVisibleNodes = tree.getVisibleNodes()
+
+      // 设置总高度，让滚动条正确
+      const totalHeight = cachedVisibleNodes.length * NODE_HEIGHT
+      contentEl.style.height = totalHeight + 'px'
+
+      renderViewport()
+
+      const t1 = performance.now()
+      updateStateDisplay()
+      updateStats(t1 - t0)
+    }
+
+    function renderViewport() {
+      const scrollTop = scrollContainer.scrollTop
+      const viewHeight = scrollContainer.clientHeight
+
+      // 计算可见范围 + 缓冲区
+      const startIndex = Math.max(0, Math.floor(scrollTop / NODE_HEIGHT) - BUFFER_COUNT)
+      const endIndex = Math.min(
+        cachedVisibleNodes.length,
+        Math.ceil((scrollTop + viewHeight) / NODE_HEIGHT) + BUFFER_COUNT
+      )
+
+      // 只渲染这个范围内的节点
+      const fragment = []
+      for (let i = startIndex; i < endIndex; i++) {
+        const node = cachedVisibleNodes[i]
+        const isExpanded = tree.isExpanded(node.key)
+        const isSelected = tree.isSelected(node.key)
+        const checkState = tree.getCheckState(node.key)
+        const mode = tree.selection.mode
+
+        let classes = 'tree-node'
+        if (node.disabled) classes += ' disabled'
+        if (isSelected) classes += ' selected'
+
+        let indent = ''
+        for (let j = 0; j < node.level; j++) indent += '<span class="indent"></span>'
+
+        const arrowClass = node.isLeaf ? 'arrow leaf' : 'arrow'
+        const arrowText = node.isLeaf ? '' : (isExpanded ? '▼' : '▶')
+
+        let checkbox = ''
+        if (mode === 'multi') {
+          let cbClass = 'checkbox'
+          let cbContent = ''
+          if (checkState === 'checked') {
+            cbClass += ' checked'
+            cbContent = '✓'
+          } else if (checkState === 'indeterminate') {
+            cbClass += ' indeterminate'
+            cbContent = '−'
+          }
+          if (node.disabled || !node.checkable) cbClass += ' disabled'
+          checkbox = `<span class="${cbClass}">${cbContent}</span>`
+        }
+
+        const top = i * NODE_HEIGHT
+        fragment.push(`
+          <div class="${classes}" data-key="${node.key}" style="position:absolute;top:${top}px;left:0;right:0;">
+            ${indent}
+            <span class="${arrowClass}" onclick="handleArrowClick('${node.key}')">${arrowText}</span>
+            ${checkbox ? `<span onclick="handleSelectClick('${node.key}')">${checkbox}</span>` : ''}
+            <span class="label" onclick="handleSelectClick('${node.key}')">${node.label}${node.disabled ? ' (禁用)' : ''}${!node.selectable ? ' (不可选)' : ''}</span>
+          </div>
+        `)
+      }
+
+      viewportEl.innerHTML = fragment.join('')
+    }
+
+    // ===== 交互 =====
+    function handleArrowClick(key) {
+      const node = tree.getNode(key)
+      if (!node || node.isLeaf) return
+      tree.toggleExpand(key)
+      render()
+    }
+
+    function handleSelectClick(key) {
+      const node = tree.getNode(key)
+      if (!node || node.disabled) return
+
+      const mode = tree.selection.mode
+      if (mode === 'single' && node.selectable) {
+        if (tree.isSelected(key)) {
+          tree.deselect(key)
+        } else {
+          tree.select(key)
+        }
+      } else if (mode === 'multi' && node.selectable && node.checkable) {
+        tree.toggleCheck(key)
+      }
+      render()
+    }
+
+    // ===== 控制面板 =====
+    function switchMode(mode) {
+      tree.selection.mode = mode
+      tree.selectedKeys = {}
+      tree.checkedKeys = {}
+      tree.indeterminateKeys = {}
+
+      document.querySelectorAll('[id^="btn-"]').forEach(b => b.classList.remove('active'))
+      document.getElementById(`btn-${mode}`).classList.add('active')
+
+      document.getElementById('cascade-section').style.display =
+        mode === 'multi' ? 'block' : 'none'
+
+      render()
+    }
+
+    function switchCascade(cascade) {
+      tree.selection.cascade = cascade
+      tree.checkedKeys = {}
+      tree.indeterminateKeys = {}
+
+      document.querySelectorAll('[id^="btn-cascade-"]').forEach(b => b.classList.remove('active'))
+      document.getElementById(`btn-cascade-${cascade}`).classList.add('active')
+
+      render()
+    }
+
+    function loadSmallData() {
+      tree = new TreeCore({ data: mockData, selection: { mode: 'none', cascade: 'none' } })
+      useLargeData = false
+      document.getElementById('btn-data-small').classList.add('active')
+      document.getElementById('btn-data-large').classList.remove('active')
+      scrollContainer.scrollTop = 0
+      switchMode('none')
+    }
+
+    function loadLargeData() {
+      if (!largeData) {
+        const t0 = performance.now()
+        largeData = generateLargeData(10000, 10)
+        const t1 = performance.now()
+        console.log(`数据生成耗时: ${(t1 - t0).toFixed(1)}ms`)
+      }
+      tree = new TreeCore({ data: largeData, selection: { mode: 'none', cascade: 'none' } })
+      useLargeData = true
+      document.getElementById('btn-data-small').classList.remove('active')
+      document.getElementById('btn-data-large').classList.add('active')
+      scrollContainer.scrollTop = 0
+      switchMode('none')
+    }
+
+    // ===== 状态显示 =====
+    function updateStateDisplay() {
+      const display = document.getElementById('state-display')
+      const selection = tree.getSelection()
+
+      if (selection.keys.length === 0) {
+        display.textContent = '无'
+        return
+      }
+
+      display.textContent = selection.keys.map((key, i) => {
+        const node = selection.nodes[i]
+        return `${node.label} (${key})`
+      }).join('\n')
+    }
+
+    function updateStats(renderTime) {
+      const stats = document.getElementById('stats')
+      const total = tree.getAllNodes().length
+      const visible = cachedVisibleNodes.length
+      const expanded = Object.keys(tree.expandedKeys).length
+      const scrollTop = scrollContainer.scrollTop
+      const viewHeight = scrollContainer.clientHeight
+      const domCount = Math.min(visible, Math.ceil(viewHeight / NODE_HEIGHT) + BUFFER_COUNT * 2)
+
+      stats.innerHTML = `
+        总节点数: ${total}<br>
+        可见节点: ${visible}<br>
+        实际DOM: ${domCount}<br>
+        已展开: ${expanded}<br>
+        渲染耗时: ${renderTime.toFixed(1)}ms
+      `
+    }
+
+    // 初始渲染
+    render()
+    switchMode('none')
+  </script>
+</body>
+</html>
