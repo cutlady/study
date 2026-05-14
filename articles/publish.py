@@ -152,7 +152,7 @@ def upload_cover(access_token, image_data):
 
 
 def md_to_wechat_html(md_text):
-    """将 Markdown 转为公众号兼容 HTML（内联样式），支持表格"""
+    """将 Markdown 转为公众号兼容 HTML（内联样式），支持表格和代码块"""
     lines = md_text.split("\n")
     out = []
     i = 0
@@ -161,9 +161,19 @@ def md_to_wechat_html(md_text):
         line = lines[i]
         stripped = line.strip()
 
-        # 代码块
+        # 代码块 — 收集内容直到闭合的 ```
         if stripped.startswith("```"):
             i += 1
+            code_lines = []
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                code_lines.append(lines[i])
+                i += 1
+            i += 1  # 跳过闭合的 ```
+            if code_lines:
+                code_html = "\n".join(html_escape(l) for l in code_lines)
+                out.append(
+                    f'<pre style="background:#f5f5f5;padding:12px;border-radius:4px;font-size:13px;line-height:1.7;color:#333;overflow-x:auto;white-space:pre-wrap;word-break:break-all;">{code_html}</pre>'
+                )
             continue
 
         # 空行
@@ -179,10 +189,10 @@ def md_to_wechat_html(md_text):
             i += 1
             continue
 
-        # 表格检测：当前行有 |，且下一行有 |---|---|
-        if "|" in stripped:
+        # 表格检测：当前行有 | 且至少有 2 个 |
+        if stripped.count("|") >= 2:
             table_rows = []
-            while i < len(lines) and "|" in lines[i].strip():
+            while i < len(lines) and lines[i].strip().count("|") >= 2:
                 table_rows.append(lines[i].strip())
                 i += 1
             out.append(_render_table(table_rows))
@@ -211,7 +221,7 @@ def md_to_wechat_html(md_text):
             text = html_escape(line[4:])
             if "AI" in text and ("总结" in text or "视角" in text):
                 out.append(
-                    f'<h3 style="font-size:17px;font-weight:bold;color:#1a6fc4;margin:28px 0 12px;padding:10px 14px;border-left:4px solid #1a6fc4;background:#f0f6ff;line-height:1.4;">{text}</h3>'
+                    f'<p style="text-align:center;margin:32px 0 16px;"><span style="display:inline-block;padding:6px 20px;border-radius:20px;background:#1a6fc4;color:#fff;font-size:14px;font-weight:bold;letter-spacing:2px;">{text}</span></p>'
                 )
             else:
                 out.append(
@@ -231,6 +241,10 @@ def md_to_wechat_html(md_text):
 
         # 普通段落
         text = render_inline(line)
+        out.append(
+            f'<p style="font-size:15px;color:#3f3f3f;line-height:1.75;margin:0 0 12px;">{text}</p>'
+        )
+        i += 1
         out.append(
             f'<p style="font-size:15px;color:#3f3f3f;line-height:1.75;margin:0 0 12px;">{text}</p>'
         )
