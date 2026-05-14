@@ -20,7 +20,6 @@ python3 to_wechat.py <文章.md>
 生成 `文章_wechat.html`，打开复制全部 HTML → 微信公众号编辑器 → 源代码模式 → 粘贴。
 
 ## 目录
-
 ```
 articles/
   README.md
