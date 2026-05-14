@@ -216,17 +216,12 @@ def md_to_wechat_html(md_text):
             i += 1
             continue
 
-        # H3 — 特殊处理"AI 的总结"
+        # H3
         if line.startswith("### "):
             text = html_escape(line[4:])
-            if "AI" in text and ("总结" in text or "视角" in text):
-                out.append(
-                    f'<p style="text-align:center;margin:32px 0 16px;"><span style="display:inline-block;padding:6px 20px;border-radius:20px;background:#1a6fc4;color:#fff;font-size:14px;font-weight:bold;letter-spacing:2px;">{text}</span></p>'
-                )
-            else:
-                out.append(
-                    f'<h3 style="font-size:16px;font-weight:bold;color:#333;margin:16px 0 8px;line-height:1.4;">{text}</h3>'
-                )
+            out.append(
+                f'<h3 style="font-size:16px;font-weight:bold;color:#333;margin:16px 0 8px;line-height:1.4;">{text}</h3>'
+            )
             i += 1
             continue
 
