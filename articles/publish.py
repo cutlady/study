@@ -152,19 +152,23 @@ def upload_cover(access_token, image_data):
 
 
 def md_to_wechat_html(md_text):
-    """将 Markdown 转为公众号兼容 HTML（内联样式）"""
+    """将 Markdown 转为公众号兼容 HTML（内联样式），支持表格"""
     lines = md_text.split("\n")
     out = []
+    i = 0
 
-    for line in lines:
+    while i < len(lines):
+        line = lines[i]
         stripped = line.strip()
 
         # 代码块
         if stripped.startswith("```"):
+            i += 1
             continue
 
-        # 空行 → 段落间隔
+        # 空行
         if not stripped:
+            i += 1
             continue
 
         # 分隔线
@@ -172,6 +176,16 @@ def md_to_wechat_html(md_text):
             out.append(
                 '<p style="text-align:center;margin:24px 0;color:#ccc;">· · ·</p>'
             )
+            i += 1
+            continue
+
+        # 表格检测：当前行有 |，且下一行有 |---|---|
+        if "|" in stripped:
+            table_rows = []
+            while i < len(lines) and "|" in lines[i].strip():
+                table_rows.append(lines[i].strip())
+                i += 1
+            out.append(_render_table(table_rows))
             continue
 
         # H1
@@ -180,6 +194,7 @@ def md_to_wechat_html(md_text):
             out.append(
                 f'<h1 style="font-size:20px;font-weight:bold;color:#333;margin:24px 0 12px;line-height:1.4;">{text}</h1>'
             )
+            i += 1
             continue
 
         # H2
@@ -188,14 +203,21 @@ def md_to_wechat_html(md_text):
             out.append(
                 f'<h2 style="font-size:18px;font-weight:bold;color:#333;margin:20px 0 10px;line-height:1.4;">{text}</h2>'
             )
+            i += 1
             continue
 
-        # H3
+        # H3 — 特殊处理"AI 的总结"
         if line.startswith("### "):
             text = html_escape(line[4:])
-            out.append(
-                f'<h3 style="font-size:16px;font-weight:bold;color:#333;margin:16px 0 8px;line-height:1.4;">{text}</h3>'
-            )
+            if "AI" in text and ("总结" in text or "视角" in text):
+                out.append(
+                    f'<h3 style="font-size:17px;font-weight:bold;color:#1a6fc4;margin:28px 0 12px;padding:10px 14px;border-left:4px solid #1a6fc4;background:#f0f6ff;line-height:1.4;">{text}</h3>'
+                )
+            else:
+                out.append(
+                    f'<h3 style="font-size:16px;font-weight:bold;color:#333;margin:16px 0 8px;line-height:1.4;">{text}</h3>'
+                )
+            i += 1
             continue
 
         # 列表
@@ -204,6 +226,7 @@ def md_to_wechat_html(md_text):
             out.append(
                 f'<p style="font-size:15px;color:#3f3f3f;line-height:1.75;margin:4px 0 4px 16px;">· {text}</p>'
             )
+            i += 1
             continue
 
         # 普通段落
@@ -211,10 +234,88 @@ def md_to_wechat_html(md_text):
         out.append(
             f'<p style="font-size:15px;color:#3f3f3f;line-height:1.75;margin:0 0 12px;">{text}</p>'
         )
+        i += 1
 
-    # 包裹 section（公众号要求）
     body = "\n".join(out)
     return f'<section style="padding:0 10px;">{body}</section>'
+
+
+def _render_table(rows):
+    """将 Markdown 表格行转为 HTML 表格"""
+    if len(rows) < 2:
+        # 不是有效表格，退化成段落
+        return f'<p style="font-size:15px;color:#3f3f3f;line-height:1.75;margin:0 0 12px;">{html_escape(" | ".join(rows))}</p>'
+
+    # 解析每一行的单元格
+    def parse_cells(row):
+        cells = row.strip().strip("|").split("|")
+        return [c.strip() for c in cells]
+
+    # 表头
+    header_cells = parse_cells(rows[0])
+
+    # 检测分隔行（如 |---|---|）
+    sep_cells = parse_cells(rows[1])
+    is_sep = all(re.match(r"^:?-{3,}:?$", c) for c in sep_cells)
+
+    if is_sep:
+        data_start = 2
+    else:
+        data_start = 1
+
+    # 对齐方式
+    aligns = []
+    if is_sep:
+        for c in sep_cells:
+            if c.startswith(":") and c.endswith(":"):
+                aligns.append("center")
+            elif c.endswith(":"):
+                aligns.append("right")
+            else:
+                aligns.append("left")
+    else:
+        aligns = ["left"] * len(header_cells)
+
+    # 数据行
+    data_rows = [parse_cells(r) for r in rows[data_start:]]
+
+    # 所有列
+    all_rows = [header_cells] + data_rows
+    num_cols = max(len(r) for r in all_rows)
+
+    # 构建 HTML
+    html_parts = [
+        '<table style="width:100%;border-collapse:collapse;margin:12px 0;font-size:14px;">'
+    ]
+
+    # 表头
+    html_parts.append('<thead>')
+    html_parts.append('<tr style="background:#f5f5f5;">')
+    for j in range(num_cols):
+        cell = header_cells[j] if j < len(header_cells) else ""
+        html_parts.append(
+            f'<th style="padding:8px 10px;border:1px solid #e0e0e0;text-align:left;font-weight:bold;color:#333;">{html_escape(cell)}</th>'
+        )
+    html_parts.append('</tr>')
+    html_parts.append('</thead>')
+
+    # 表体
+    html_parts.append('<tbody>')
+    for row_idx, row in enumerate(data_rows):
+        bg = "#fff" if row_idx % 2 == 0 else "#fafafa"
+        html_parts.append(f'<tr style="background:{bg};">')
+        for j in range(num_cols):
+            cell = row[j] if j < len(row) else ""
+            align = aligns[j] if j < len(aligns) else "left"
+            cell_html = render_inline(cell)
+            html_parts.append(
+                f'<td style="padding:8px 10px;border:1px solid #e0e0e0;text-align:{align};color:#3f3f3f;">{cell_html}</td>'
+            )
+        html_parts.append('</tr>')
+    html_parts.append('</tbody>')
+    html_parts.append('</table>')
+
+    return "\n".join(html_parts)
 
 
 def html_escape(text):
@@ -241,12 +342,13 @@ def extract_title_and_digest(md_text):
             title = line[2:].strip()
             break
 
-    # 摘要：取第一个非空、非标题段落的前 120 字
+    # 摘要：取第一个非空、非标题段落的前 120 字，跳过引用和元信息
     for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or stripped == "---":
             continue
-        # 去掉加粗标记
+        if stripped.startswith(">") or stripped.startswith("来源") or stripped.startswith("日期"):
+            continue
         clean = re.sub(r"\*\*", "", stripped)
         digest = clean[:120]
         if len(clean) > 120:
