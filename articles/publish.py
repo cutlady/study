@@ -17,9 +17,11 @@ import json
 import re
 import time
 import html
+import io
 import urllib.request
 import urllib.error
 from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 PROJECT_DIR = SCRIPT_DIR.parent
@@ -54,6 +56,99 @@ def get_access_token(appid, appsecret):
     except urllib.error.URLError as e:
         print(f"网络错误: {e}")
         sys.exit(1)
+
+
+def generate_cover(title):
+    """自动生成封面图 (900x500)，黑色背景 + 白色大字标题"""
+    width, height = 900, 500
+    img = Image.new("RGB", (width, height), "#1a1a1a")
+    draw = ImageDraw.Draw(img)
+
+    # 尝试使用系统字体
+    font_size = 48
+    font = None
+    font_paths = [
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+    ]
+    for fp in font_paths:
+        if os.path.exists(fp):
+            font = ImageFont.truetype(fp, font_size)
+            break
+    if font is None:
+        font = ImageFont.load_default()
+
+    # 文字换行
+    chars_per_line = 16
+    lines = []
+    for i in range(0, len(title), chars_per_line):
+        lines.append(title[i : i + chars_per_line])
+
+    # 居中绘制
+    line_height = font_size + 16
+    total_height = len(lines) * line_height
+    y_start = (height - total_height) // 2
+
+    for idx, line in enumerate(lines):
+        bbox = draw.textbbox((0, 0), line, font=font)
+        tw = bbox[2] - bbox[0]
+        x = (width - tw) // 2
+        y = y_start + idx * line_height
+        draw.text((x, y), line, fill="#ffffff", font=font)
+
+    # 底部小字
+    small_font = None
+    for fp in font_paths:
+        if os.path.exists(fp):
+            small_font = ImageFont.truetype(fp, 18)
+            break
+    if small_font is None:
+        small_font = ImageFont.load_default()
+    tagline = "每日学习 · 刀哥"
+    bbox = draw.textbbox((0, 0), tagline, font=small_font)
+    tw = bbox[2] - bbox[0]
+    draw.text(((width - tw) // 2, height - 60), tagline, fill="#888888", font=small_font)
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def upload_cover(access_token, image_data):
+    """上传封面图到微信素材库，返回 media_id"""
+    url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={access_token}&type=image"
+
+    boundary = "----WebKitFormBoundary" + hex(int(time.time() * 1000))[2:]
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="media"; filename="cover.png"\r\n'
+        f"Content-Type: image/png\r\n\r\n"
+    ).encode("utf-8")
+    body += image_data
+    body += f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+            if "media_id" in result:
+                print(f"封面图上传成功: {result['media_id']}")
+                return result["media_id"]
+            else:
+                print(f"封面上传失败: {result}")
+                return None
+    except urllib.error.URLError as e:
+        print(f"封面图上传网络错误: {e}")
+        return None
 
 
 def md_to_wechat_html(md_text):
@@ -161,7 +256,7 @@ def extract_title_and_digest(md_text):
     return title, digest
 
 
-def create_draft(access_token, title, content, digest=""):
+def create_draft(access_token, title, content, thumb_media_id, digest=""):
     """创建公众号草稿"""
     url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={access_token}"
 
@@ -169,8 +264,10 @@ def create_draft(access_token, title, content, digest=""):
         "articles": [
             {
                 "title": title,
+                "author": "刀哥",
                 "content": content,
                 "digest": digest,
+                "thumb_media_id": thumb_media_id,
                 "content_source_url": "",
                 "need_open_comment": 0,
                 "only_fans_can_comment": 0,
@@ -186,7 +283,7 @@ def create_draft(access_token, title, content, digest=""):
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read())
-            if result.get("errcode") == 0:
+            if "media_id" in result:
                 media_id = result.get("media_id", "")
                 print(f"草稿创建成功！media_id: {media_id}")
                 print(f"标题: {title}")
@@ -242,9 +339,17 @@ def main():
     env = load_env()
     access_token = get_access_token(env["WECHAT_APPID"], env["WECHAT_APPSECRET"])
 
+    # 生成并上传封面
+    print("生成封面…")
+    cover_data = generate_cover(title)
+    thumb_media_id = upload_cover(access_token, cover_data)
+    if not thumb_media_id:
+        print("错误: 封面图上传失败，无法创建草稿")
+        sys.exit(1)
+
     # 创建草稿
     print("推送到草稿箱…")
-    create_draft(access_token, title, content, digest)
+    create_draft(access_token, title, content, thumb_media_id, digest)
 
     print("完成！打开公众号后台 → 图文消息 → 草稿箱 查看")
 
