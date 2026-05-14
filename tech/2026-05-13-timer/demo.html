@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JS 定时器与事件循环 — 可视化演示</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Menlo', 'Consolas', 'Courier New', monospace; background: #0a0a0f; color: #e0e0e0; overflow-x: hidden; }
+
+/* 顶部标题 */
+.header { text-align: center; padding: 40px 20px 20px; }
+.header h1 { font-size: 28px; background: linear-gradient(135deg, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.header p { color: #888; margin-top: 8px; font-size: 14px; }
+
+/* 导航 tabs */
+.tabs { display: flex; justify-content: center; gap: 4px; padding: 20px; flex-wrap: wrap; }
+.tab-btn {
+  padding: 10px 20px; border: 1px solid #333; background: #111; color: #888;
+  border-radius: 8px; cursor: pointer; font-family: inherit; font-size: 13px;
+  transition: all .2s;
+}
+.tab-btn:hover { border-color: #555; color: #ccc; }
+.tab-btn.active { background: #1a1a2e; border-color: #60a5fa; color: #60a5fa; }
+
+/* 演示面板 */
+.demo-panel { display: none; max-width: 960px; margin: 0 auto; padding: 0 20px 60px; }
+.demo-panel.active { display: block; }
+
+/* 通用 card */
+.card {
+  background: #111118; border: 1px solid #222; border-radius: 12px;
+  padding: 24px; margin-bottom: 20px;
+}
+.card h2 { font-size: 18px; color: #e0e0e0; margin-bottom: 16px; }
+.card h3 { font-size: 14px; color: #888; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* 按钮组 */
+.btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.btn {
+  padding: 8px 18px; border-radius: 6px; border: none; cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: bold; transition: all .15s;
+}
+.btn-primary { background: #3b82f6; color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-primary:disabled { background: #1e3a5f; color: #555; cursor: not-allowed; }
+.btn-danger { background: #ef4444; color: #fff; }
+.btn-danger:hover { background: #dc2626; }
+.btn-warning { background: #f59e0b; color: #000; }
+.btn-success { background: #10b981; color: #fff; }
+
+/* ============ Panel 1: 基本用法 ============ */
+.timer-display {
+  font-size: 64px; text-align: center; padding: 30px;
+  font-variant-numeric: tabular-nums; color: #60a5fa;
+}
+.timer-label { text-align: center; color: #666; font-size: 13px; margin-bottom: 20px; }
+
+/* ============ Panel 2: 误差对比 ============ */
+.race-container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 640px) { .race-container { grid-template-columns: 1fr; } }
+.race-track { background: #0a0a12; border-radius: 8px; padding: 16px; }
+.race-title { font-size: 14px; margin-bottom: 12px; }
+.race-title.interval { color: #f59e0b; }
+.race-title.timeout { color: #10b981; }
+
+.tick-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 6px; height: 28px;
+}
+.tick-num { width: 56px; text-align: right; font-size: 12px; color: #666; }
+.tick-bar-bg { flex: 1; height: 18px; background: #1a1a24; border-radius: 4px; position: relative; overflow: hidden; }
+.tick-bar {
+  height: 100%; border-radius: 4px; width: 0;
+  transition: width 0.4s ease-out;
+}
+.tick-bar.interval { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+.tick-bar.timeout { background: linear-gradient(90deg, #10b981, #3b82f6); }
+.tick-error {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  font-size: 11px; color: rgba(255,255,255,0.8);
+}
+.tick-expected { position: absolute; width: 2px; height: 100%; background: rgba(255,255,255,0.3); top: 0; }
+
+.race-legend {
+  display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: #666;
+}
+.legend-line { display: inline-block; width: 16px; height: 2px; vertical-align: middle; margin-right: 4px; }
+
+/* ============ Panel 3: 事件循环 ============ */
+.event-loop-stage {
+  display: flex; gap: 12px; align-items: stretch; margin-bottom: 16px;
+  min-height: 200px;
+}
+.el-phase {
+  flex: 1; border-radius: 8px; padding: 12px; display: flex; flex-direction: column;
+}
+.el-phase.macro { background: #1a1225; border: 1px solid #7c3aed33; }
+.el-phase.micro { background: #0f1a15; border: 1px solid #10b98133; }
+.el-phase.sync  { background: #1a1510; border: 1px solid #f59e0b33; }
+.el-phase.exec  { background: #0f1520; border: 1px solid #3b82f633; }
+
+.el-phase-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 1px;
+  margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #ffffff11;
+}
+.el-phase.macro .el-phase-title { color: #a78bfa; }
+.el-phase.micro .el-phase-title { color: #34d399; }
+.el-phase.sync  .el-phase-title { color: #fbbf24; }
+.el-phase.exec  .el-phase-title { color: #60a5fa; }
+
+.el-queue { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.el-item {
+  padding: 6px 10px; border-radius: 4px; font-size: 12px;
+  opacity: 0; transform: translateX(-10px);
+  transition: all .3s ease-out;
+}
+.el-item.visible { opacity: 1; transform: translateX(0); }
+.el-item.running { animation: pulse-glow 0.6s ease-in-out; }
+
+.el-phase.macro .el-item { background: #7c3aed33; color: #c4b5fd; }
+.el-phase.micro .el-item { background: #10b98133; color: #6ee7b7; }
+.el-phase.sync  .el-item { background: #f59e0b33; color: #fcd34d; }
+.el-phase.exec  .el-item { background: #3b82f633; color: #93c5fd; }
+
+.el-item.done { opacity: 0.3; text-decoration: line-through; }
+
+@keyframes pulse-glow {
+  0% { box-shadow: none; }
+  50% { box-shadow: 0 0 12px rgba(96,165,250,0.4); }
+  100% { box-shadow: none; }
+}
+
+/* 输出日志 */
+.output-log {
+  background: #0a0a0f; border-radius: 8px; padding: 12px 16px;
+  font-size: 13px; line-height: 1.8; min-height: 80px;
+  border: 1px solid #1a1a24;
+}
+.output-line { opacity: 0; transform: translateY(4px); transition: all .2s; }
+.output-line.visible { opacity: 1; transform: translateY(0); }
+
+/* 代码展示 */
+.code-block {
+  background: #0d0d14; border-radius: 8px; padding: 16px;
+  font-size: 13px; line-height: 1.7; margin-bottom: 16px;
+  border: 1px solid #1a1a24; overflow-x: auto;
+}
+.code-block .kw { color: #c792ea; }
+.code-block .fn { color: #82aaff; }
+.code-block .str { color: #c3e88d; }
+.code-block .num { color: #f78c6c; }
+.code-block .cmt { color: #546e7a; }
+.code-block .obj { color: #ffcb6b; }
+
+/* ============ Panel 4: 事件循环动画 ============ */
+.loop-visual {
+  display: flex; flex-direction: column; align-items: center; margin: 20px 0;
+}
+.loop-ring {
+  width: 260px; height: 260px; position: relative;
+}
+.loop-center {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 80px; height: 80px; border-radius: 50%; background: #111;
+  border: 2px solid #333; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: #888; text-align: center; line-height: 1.3;
+}
+.loop-step {
+  position: absolute; width: 70px; height: 36px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; text-align: center; transition: all .3s;
+}
+.loop-step.s1 { top: -8px; left: 50%; transform: translateX(-50%); background: #7c3aed33; color: #c4b5fd; border: 1px solid #7c3aed55; }
+.loop-step.s2 { top: 40px; right: -10px; background: #10b98133; color: #6ee7b7; border: 1px solid #10b98155; }
+.loop-step.s3 { bottom: 40px; right: -10px; background: #f59e0b33; color: #fcd34d; border: 1px solid #f59e0b55; }
+.loop-step.s4 { bottom: -8px; left: 50%; transform: translateX(-50%); background: #3b82f633; color: #93c5fd; border: 1px solid #3b82f655; }
+.loop-step.s5 { bottom: 40px; left: -10px; background: #ef444433; color: #fca5a5; border: 1px solid #ef444455; }
+.loop-step.s6 { top: 40px; left: -10px; background: #8b5cf633; color: #c4b5fd; border: 1px solid #8b5cf655; }
+
+.loop-step.active { transform: scale(1.25); box-shadow: 0 0 20px rgba(96,165,250,0.3); border-color: #60a5fa; z-index: 2; }
+.loop-step.s1.active { transform: translateX(-50%) scale(1.25); }
+.loop-step.s4.active { transform: translateX(-50%) scale(1.25); }
+
+/* 步骤说明 */
+.step-desc {
+  text-align: center; min-height: 40px; font-size: 14px; color: #93c5fd;
+  margin-top: 16px; transition: all .3s;
+}
+
+/* ============ Panel 5: 网络请求 ============ */
+.network-timeline {
+  position: relative; padding: 20px 0;
+}
+.timeline-row {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 16px;
+  opacity: 0; transform: translateX(-20px); transition: all .4s;
+}
+.timeline-row.visible { opacity: 1; transform: translateX(0); }
+
+.timeline-dot {
+  width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0;
+  border: 2px solid; position: relative;
+}
+.timeline-dot.js { border-color: #fbbf24; background: #fbbf2433; }
+.timeline-dot.net { border-color: #ef4444; background: #ef444433; }
+.timeline-dot.micro { border-color: #10b981; background: #10b98133; }
+
+.timeline-time { width: 50px; font-size: 12px; color: #666; text-align: right; flex-shrink: 0; }
+.timeline-content { font-size: 13px; flex: 1; }
+.timeline-content .tag {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  font-size: 11px; margin-right: 6px;
+}
+.tag-js { background: #fbbf2422; color: #fbbf24; }
+.tag-net { background: #ef444422; color: #ef4444; }
+.tag-micro { background: #10b98122; color: #10b981; }
+
+.timeline-line {
+  position: absolute; left: 94px; top: 0; bottom: 0; width: 2px;
+  background: linear-gradient(180deg, transparent, #333 10%, #333 90%, transparent);
+}
+
+/* ============ Panel 6: 选型指南 ============ */
+.guide-grid { display: grid; gap: 10px; }
+.guide-item {
+  display: flex; align-items: flex-start; gap: 12px; padding: 14px;
+  background: #0a0a12; border-radius: 8px; border: 1px solid #1a1a24;
+  transition: all .2s;
+}
+.guide-item:hover { border-color: #333; }
+.guide-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+.guide-text { flex: 1; }
+.guide-title { font-size: 14px; font-weight: bold; margin-bottom: 4px; }
+.guide-desc { font-size: 12px; color: #888; line-height: 1.6; }
+.guide-choice {
+  display: inline-block; padding: 2px 10px; border-radius: 4px;
+  font-size: 11px; font-weight: bold; margin-left: 6px;
+}
+.guide-choice.st { background: #f59e0b22; color: #f59e0b; }
+.guide-choice.si { background: #3b82f622; color: #3b82f6; }
+.guide-choice.rs { background: #10b98122; color: #10b981; }
+.guide-choice.raf { background: #a78bfa22; color: #a78bfa; }
+
+/* 速度控制 */
+.speed-control { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 13px; color: #888; }
+.speed-control input[type="range"] { flex: 1; max-width: 200px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>JS 定时器与事件循环</h1>
+  <p>交互式可视化演示 — 基于 2026-05-13 学习笔记</p>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" data-panel="basic">基本用法</button>
+  <button class="tab-btn" data-panel="error">累积误差</button>
+  <button class="tab-btn" data-panel="priority">执行优先级</button>
+  <button class="tab-btn" data-panel="loop">事件循环</button>
+  <button class="tab-btn" data-panel="network">网络请求</button>
+  <button class="tab-btn" data-panel="guide">选型指南</button>
+</div>
+
+<!-- Panel 1: 基本用法 -->
+<div class="demo-panel active" id="panel-basic">
+  <div class="card">
+    <h2>setTimeout vs setInterval</h2>
+    <div class="timer-display" id="basic-timer">00:00.000</div>
+    <div class="timer-label" id="basic-label">点击下方按钮开始演示</div>
+    <div class="btn-group" style="justify-content:center;">
+      <button class="btn btn-primary" id="btn-settimeout">setTimeout 2秒</button>
+      <button class="btn btn-warning" id="btn-setinterval">setInterval 每秒</button>
+      <button class="btn btn-danger" id="btn-clear">clear</button>
+      <button class="btn btn-success" id="btn-recursive">递归 setTimeout</button>
+      <button class="btn" style="background:#333;color:#aaa;" id="btn-reset">重置</button>
+    </div>
+    <div class="output-log" id="basic-log"></div>
+  </div>
+  <div class="card">
+    <h3>区别一览</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;">
+      <div style="background:#1a1510;border-radius:8px;padding:14px;border:1px solid #f59e0b22;">
+        <div style="color:#f59e0b;margin-bottom:8px;font-weight:bold;">setTimeout</div>
+        <div style="color:#aaa;line-height:1.8;">延迟 N ms 后执行 <b>一次</b></div>
+        <div style="color:#aaa;line-height:1.8;">清除：clearTimeout(id)</div>
+      </div>
+      <div style="background:#0f1a15;border-radius:8px;padding:14px;border:1px solid #10b98122;">
+        <div style="color:#10b981;margin-bottom:8px;font-weight:bold;">setInterval</div>
+        <div style="color:#aaa;line-height:1.8;">每隔 N ms 执行 <b>一次</b>（持续）</div>
+        <div style="color:#aaa;line-height:1.8;">清除：clearInterval(id)</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Panel 2: 累积误差 -->
+<div class="demo-panel" id="panel-error">
+  <div class="card">
+    <h2>累积误差对比</h2>
+    <p style="color:#888;font-size:13px;margin-bottom:16px;">
+      用 300ms 阻塞模拟主线程繁忙。白色竖线 = 预期时间点，条形长度 = 实际经过时间。
+    </p>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="btn-race-start">开始对比</button>
+      <button class="btn btn-danger" id="btn-race-reset">重置</button>
+    </div>
+    <div class="speed-control">
+      <span>回放速度:</span>
+      <input type="range" min="1" max="5" value="3" id="race-speed">
+      <span id="race-speed-label">3x</span>
+    </div>
+    <div class="race-container">
+      <div class="race-track">
+        <div class="race-title interval">setInterval — 误差会累积</div>
+        <div id="race-interval"></div>
+      </div>
+      <div class="race-track">
+        <div class="race-title timeout">递归 setTimeout — 误差不累积</div>
+        <div id="race-timeout"></div>
+      </div>
+    </div>
+    <div class="race-legend">
+      <span><span class="legend-line" style="background:rgba(255,255,255,0.3);"></span> 预期时间点</span>
+      <span><span class="legend-line" style="background:#f59e0b;"></span> setInterval 实际</span>
+      <span><span class="legend-line" style="background:#10b981;"></span> 递归 setTimeout 实际</span>
+    </div>
+  </div>
+</div>
+
+<!-- Panel 3: 执行优先级 -->
+<div class="demo-panel" id="panel-priority">
+  <div class="card">
+    <h2>执行优先级：同步 > 微任务 > 宏任务</h2>
+    <div class="code-block">
+<span class="cmt">// 点击"执行"观察输出顺序</span>
+<span class="obj">console</span>.<span class="fn">log</span>(<span class="str">'1'</span>);                                <span class="cmt">// 同步</span>
+<span class="fn">setTimeout</span>(() => <span class="obj">console</span>.<span class="fn">log</span>(<span class="str">'2'</span>), <span class="num">0</span>);           <span class="cmt">// 宏任务</span>
+<span class="obj">Promise</span>.<span class="fn">resolve</span>().<span class="fn">then</span>(() => <span class="obj">console</span>.<span class="fn">log</span>(<span class="str">'3'</span>));  <span class="cmt">// 微任务</span>
+<span class="obj">console</span>.<span class="fn">log</span>(<span class="str">'4'</span>);                                <span class="cmt">// 同步</span>
+<span class="cmt">// 输出：1 → 4 → 3 → 2</span>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="btn-priority-run">执行</button>
+      <button class="btn btn-danger" id="btn-priority-reset">重置</button>
+    </div>
+    <div class="speed-control">
+      <span>动画速度:</span>
+      <input type="range" min="1" max="5" value="3" id="priority-speed">
+      <span id="priority-speed-label">3x</span>
+    </div>
+    <div class="event-loop-stage">
+      <div class="el-phase sync">
+        <div class="el-phase-title">同步调用栈</div>
+        <div class="el-queue" id="el-sync-queue"></div>
+      </div>
+      <div class="el-phase micro">
+        <div class="el-phase-title">微任务队列</div>
+        <div class="el-queue" id="el-micro-queue"></div>
+      </div>
+      <div class="el-phase macro">
+        <div class="el-phase-title">宏任务队列</div>
+        <div class="el-queue" id="el-macro-queue"></div>
+      </div>
+      <div class="el-phase exec">
+        <div class="el-phase-title">执行输出</div>
+        <div class="el-queue" id="el-exec-queue"></div>
+      </div>
+    </div>
+    <div class="output-log" id="priority-log"></div>
+  </div>
+</div>
+
+<!-- Panel 4: 事件循环 -->
+<div class="demo-panel" id="panel-loop">
+  <div class="card">
+    <h2>事件循环 (Event Loop)</h2>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="btn-loop-start">播放动画</button>
+      <button class="btn btn-danger" id="btn-loop-reset">重置</button>
+    </div>
+    <div class="speed-control">
+      <span>动画速度:</span>
+      <input type="range" min="1" max="5" value="2" id="loop-speed">
+      <span id="loop-speed-label">2x</span>
+    </div>
+    <div class="loop-visual">
+      <div class="loop-ring">
+        <div class="loop-center">Event<br>Loop</div>
+        <div class="loop-step s1" data-step="1">取一个<br>宏任务</div>
+        <div class="loop-step s2" data-step="2">执行<br>宏任务</div>
+        <div class="loop-step s3" data-step="3">清空<br>微任务</div>
+        <div class="loop-step s4" data-step="4">渲染</div>
+        <div class="loop-step s5" data-step="5">回到<br>步骤1</div>
+        <div class="loop-step s6" data-step="6">...循环</div>
+      </div>
+      <div class="step-desc" id="loop-desc">点击"播放动画"开始</div>
+    </div>
+    <div class="card" style="background:#0a0a0f;">
+      <h3>优先级</h3>
+      <div style="display:flex;align-items:center;gap:12px;justify-content:center;font-size:14px;flex-wrap:wrap;">
+        <span style="color:#fbbf24;font-weight:bold;">同步</span>
+        <span style="color:#555;">&gt;</span>
+        <span style="color:#34d399;font-weight:bold;">微任务 (Promise.then)</span>
+        <span style="color:#555;">&gt;</span>
+        <span style="color:#a78bfa;font-weight:bold;">宏任务 (setTimeout)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Panel 5: 网络请求 -->
+<div class="demo-panel" id="panel-network">
+  <div class="card">
+    <h2>网络请求的完整过程</h2>
+    <p style="color:#888;font-size:13px;margin-bottom:16px;">
+      "微任务优先级高"指的是回调进入队列后的优先级，跟请求本身耗时无关。
+    </p>
+    <div class="code-block">
+<span class="fn">fetch</span>(url).<span class="fn">then</span>(res => <span class="obj">console</span>.<span class="fn">log</span>(<span class="str">'拿到了'</span>))
+<span class="cmt">// fetch 发起请求后，JS 线程不等待，继续执行同步代码</span>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" id="btn-net-start">播放时间线</button>
+      <button class="btn btn-danger" id="btn-net-reset">重置</button>
+    </div>
+    <div class="speed-control">
+      <span>播放速度:</span>
+      <input type="range" min="1" max="5" value="2" id="net-speed">
+      <span id="net-speed-label">2x</span>
+    </div>
+    <div class="network-timeline" id="net-timeline">
+      <div class="timeline-line"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Panel 6: 选型指南 -->
+<div class="demo-panel" id="panel-guide">
+  <div class="card">
+    <h2>选型指南</h2>
+    <div class="guide-grid">
+      <div class="guide-item">
+        <div class="guide-icon">🕐</div>
+        <div class="guide-text">
+          <div class="guide-title">延迟执行一次 <span class="guide-choice st">setTimeout</span></div>
+          <div class="guide-desc">Toast 3秒后消失、延迟加载、防抖</div>
+        </div>
+      </div>
+      <div class="guide-item">
+        <div class="guide-icon">🔁</div>
+        <div class="guide-text">
+          <div class="guide-title">简单时钟/倒计时 <span class="guide-choice si">setInterval</span></div>
+          <div class="guide-desc">语义清晰，短期使用误差可忽略</div>
+        </div>
+      </div>
+      <div class="guide-item">
+        <div class="guide-icon">📡</div>
+        <div class="guide-text">
+          <div class="guide-title">固定节奏轮询 <span class="guide-choice rs">递归 setTimeout</span></div>
+          <div class="guide-desc">每5秒检查状态，避免请求积压</div>
+        </div>
+      </div>
+      <div class="guide-item">
+        <div class="guide-icon">⏳</div>
+        <div class="guide-text">
+          <div class="guide-title">回调耗时可能超过间隔 <span class="guide-choice rs">递归 setTimeout</span></div>
+          <div class="guide-desc">setInterval 会积压，递归模式更安全</div>
+        </div>
+      </div>
+      <div class="guide-item">
+        <div class="guide-icon">🎛️</div>
+        <div class="guide-text">
+          <div class="guide-title">需要动态调整间隔 <span class="guide-choice rs">递归 setTimeout</span></div>
+          <div class="guide-desc">根据执行结果灵活控制下一次间隔</div>
+        </div>
+      </div>
+      <div class="guide-item">
+        <div class="guide-icon">🎬</div>
+        <div class="guide-text">
+          <div class="guide-title">动画帧 <span class="guide-choice raf">requestAnimationFrame</span></div>
+          <div class="guide-desc">与屏幕刷新同步，更准确更流畅</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== Tab 切换 ====================
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.demo-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + btn.dataset.panel).classList.add('active');
+  });
+});
+
+// ==================== Panel 1: 基本用法 ====================
+(() => {
+  const timerEl = document.getElementById('basic-timer');
+  const labelEl = document.getElementById('basic-label');
+  const logEl = document.getElementById('basic-log');
+  let timerRAF, startTime, intervalId, recursiveCount;
+
+  function updateTimer() {
+    if (!startTime) return;
+    const ms = Date.now() - startTime;
+    const min = String(Math.floor(ms / 60000)).padStart(2, '0');
+    const sec = String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
+    const mil = String(ms % 1000).padStart(3, '0');
+    timerEl.textContent = `${min}:${sec}.${mil}`;
+    timerRAF = requestAnimationFrame(updateTimer);
+  }
+
+  function log(text, color) {
+    const line = document.createElement('div');
+    line.className = 'output-line';
+    line.style.color = color || '#e0e0e0';
+    line.textContent = `[${timerEl.textContent}] ${text}`;
+    logEl.appendChild(line);
+    requestAnimationFrame(() => line.classList.add('visible'));
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  document.getElementById('btn-settimeout').addEventListener('click', function() {
+    if (!startTime) { startTime = Date.now(); updateTimer(); }
+    log('setTimeout 注册，2秒后执行...', '#f59e0b');
+    this.disabled = true;
+    setTimeout(() => {
+      log('setTimeout 回调执行!', '#f59e0b');
+      this.disabled = false;
+    }, 2000);
+  });
+
+  document.getElementById('btn-setinterval').addEventListener('click', function() {
+    if (!startTime) { startTime = Date.now(); updateTimer(); }
+    if (intervalId) { log('setInterval 已在运行', '#ef4444'); return; }
+    let count = 0;
+    log('setInterval 注册，每秒执行', '#10b981');
+    intervalId = setInterval(() => {
+      count++;
+      log(`setInterval 回调 #${count}`, '#10b981');
+    }, 1000);
+  });
+
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    if (intervalId) { clearInterval(intervalId); intervalId = null; log('clearInterval 已清除', '#ef4444'); }
+  });
+
+  document.getElementById('btn-recursive').addEventListener('click', function() {
+    if (!startTime) { startTime = Date.now(); updateTimer(); }
+    recursiveCount = 0;
+    log('递归 setTimeout 开始', '#3b82f6');
+    function tick() {
+      recursiveCount++;
+      log(`递归 setTimeout 回调 #${recursiveCount}`, '#3b82f6');
+      if (recursiveCount < 5) setTimeout(tick, 1000);
+      else log('递归 setTimeout 结束（5次）', '#3b82f6');
+    }
+    setTimeout(tick, 1000);
+  });
+
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    if (intervalId) clearInterval(intervalId);
+    intervalId = null; startTime = null;
+    cancelAnimationFrame(timerRAF);
+    timerEl.textContent = '00:00.000';
+    labelEl.textContent = '点击下方按钮开始演示';
+    logEl.innerHTML = '';
+    document.getElementById('btn-settimeout').disabled = false;
+  });
+})();
+
+// ==================== Panel 2: 累积误差 ====================
+(() => {
+  const intervalContainer = document.getElementById('race-interval');
+  const timeoutContainer = document.getElementById('race-timeout');
+  let raceRunning = false;
+
+  // 预设实验数据（模拟笔记中的误差）
+  const intervalData = [
+    { tick: 1, expected: 1000, actual: 1004, error: 4 },
+    { tick: 2, expected: 2000, actual: 2005, error: 5 },
+    { tick: 3, expected: 3000, actual: 3021, error: 21 },
+    { tick: 4, expected: 4000, actual: 4206, error: 206 },
+    { tick: 5, expected: 5000, actual: 5506, error: 506 },
+  ];
+  const timeoutData = [
+    { tick: 1, expected: 1000, actual: 1004, error: 4 },
+    { tick: 2, expected: 2000, actual: 2008, error: 8 },
+    { tick: 3, expected: 3000, actual: 3012, error: 12 },
+    { tick: 4, expected: 4000, actual: 4017, error: 17 },
+    { tick: 5, expected: 5000, actual: 5021, error: 21 },
+  ];
+
+  function buildRows(container, data, type) {
+    container.innerHTML = '';
+    const maxTime = 6000;
+    data.forEach((d, i) => {
+      const row = document.createElement('div');
+      row.className = 'tick-row';
+
+      const num = document.createElement('div');
+      num.className = 'tick-num';
+      num.textContent = `tick ${d.tick}`;
+
+      const barBg = document.createElement('div');
+      barBg.className = 'tick-bar-bg';
+
+      // 预期时间线
+      const expectedLine = document.createElement('div');
+      expectedLine.className = 'tick-expected';
+      expectedLine.style.left = (d.expected / maxTime * 100) + '%';
+      barBg.appendChild(expectedLine);
+
+      const bar = document.createElement('div');
+      bar.className = `tick-bar ${type}`;
+      bar.dataset.width = (d.actual / maxTime * 100);
+      barBg.appendChild(bar);
+
+      const errorLabel = document.createElement('div');
+      errorLabel.className = 'tick-error';
+      errorLabel.textContent = `+${d.error}ms`;
+      bar.appendChild(errorLabel);
+
+      row.appendChild(num);
+      row.appendChild(barBg);
+      container.appendChild(row);
+    });
+  }
+
+  function getSpeed(sliderId) {
+    return parseInt(document.getElementById(sliderId).value);
+  }
+
+  document.getElementById('race-speed').addEventListener('input', function() {
+    document.getElementById('race-speed-label').textContent = this.value + 'x';
+  });
+
+  document.getElementById('btn-race-start').addEventListener('click', () => {
+    if (raceRunning) return;
+    raceRunning = true;
+    buildRows(intervalContainer, intervalData, 'interval');
+    buildRows(timeoutContainer, timeoutData, 'timeout');
+
+    const speed = getSpeed('race-speed');
+    const bars = document.querySelectorAll('.tick-bar');
+    let idx = 0;
+
+    function animateNext() {
+      if (idx >= bars.length) { raceRunning = false; return; }
+      bars[idx].style.width = bars[idx].dataset.width + '%';
+      idx++;
+      setTimeout(animateNext, 800 / speed);
+    }
+    // 两边交替出现
+    const iBars = intervalContainer.querySelectorAll('.tick-bar');
+    const tBars = timeoutContainer.querySelectorAll('.tick-bar');
+    let step = 0;
+    function alternate() {
+      if (step >= 5) { raceRunning = false; return; }
+      iBars[step].style.width = iBars[step].dataset.width + '%';
+      setTimeout(() => {
+        tBars[step].style.width = tBars[step].dataset.width + '%';
+        step++;
+        setTimeout(alternate, 600 / speed);
+      }, 400 / speed);
+    }
+    alternate();
+  });
+
+  document.getElementById('btn-race-reset').addEventListener('click', () => {
+    raceRunning = false;
+    intervalContainer.innerHTML = '';
+    timeoutContainer.innerHTML = '';
+  });
+})();
+
+// ==================== Panel 3: 执行优先级 ====================
+(() => {
+  const syncQ = document.getElementById('el-sync-queue');
+  const microQ = document.getElementById('el-micro-queue');
+  const macroQ = document.getElementById('el-macro-queue');
+  const execQ = document.getElementById('el-exec-queue');
+  const logEl = document.getElementById('priority-log');
+  let running = false;
+
+  function getSpeed() { return parseInt(document.getElementById('priority-speed').value); }
+  document.getElementById('priority-speed').addEventListener('input', function() {
+    document.getElementById('priority-speed-label').textContent = this.value + 'x';
+  });
+
+  function makeItem(text, container, color) {
+    const el = document.createElement('div');
+    el.className = 'el-item';
+    el.textContent = text;
+    container.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('visible'));
+    return el;
+  }
+
+  function delay(ms) {
+    return new Promise(r => setTimeout(r, ms / getSpeed()));
+  }
+
+  function log(text, color) {
+    const line = document.createElement('div');
+    line.className = 'output-line';
+    line.style.color = color || '#e0e0e0';
+    line.textContent = text;
+    logEl.appendChild(line);
+    requestAnimationFrame(() => line.classList.add('visible'));
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  document.getElementById('btn-priority-run').addEventListener('click', async () => {
+    if (running) return;
+    running = true;
+
+    syncQ.innerHTML = '';
+    microQ.innerHTML = '';
+    macroQ.innerHTML = '';
+    execQ.innerHTML = '';
+    logEl.innerHTML = '';
+
+    const base = 1200 / getSpeed();
+
+    // Step 1: 注册阶段
+    log('--- 代码解析，注册回调 ---', '#555');
+    const item1 = makeItem("console.log('1')", syncQ);
+    await delay(base);
+    const item2 = makeItem("setTimeout(cb, 0)", syncQ);
+    const macro1 = makeItem("cb → console.log('2')", macroQ);
+    await delay(base * 0.5);
+    const item3 = makeItem("Promise.resolve().then(cb)", syncQ);
+    const micro1 = makeItem("cb → console.log('3')", microQ);
+    await delay(base * 0.5);
+    const item4 = makeItem("console.log('4')", syncQ);
+    await delay(base);
+
+    // Step 2: 执行同步代码
+    log('--- 开始执行同步代码 ---', '#fbbf24');
+    item1.classList.add('running');
+    await delay(base * 0.6);
+    makeItem("输出: '1'", execQ).style.color = '#fbbf24';
+    log("输出: 1", '#fbbf24');
+    item1.classList.add('done');
+    item1.classList.remove('running');
+    await delay(base * 0.3);
+
+    item2.classList.add('done');
+    item3.classList.add('done');
+    await delay(base * 0.3);
+
+    item4.classList.add('running');
+    await delay(base * 0.6);
+    makeItem("输出: '4'", execQ).style.color = '#fbbf24';
+    log("输出: 4", '#fbbf24');
+    item4.classList.add('done');
+    item4.classList.remove('running');
+    await delay(base);
+
+    // Step 3: 清空微任务
+    log('--- 同步代码完毕，清空微任务队列 ---', '#10b981');
+    micro1.classList.add('running');
+    await delay(base * 0.8);
+    makeItem("输出: '3'", execQ).style.color = '#34d399';
+    log("输出: 3", '#34d399');
+    micro1.classList.add('done');
+    micro1.classList.remove('running');
+    await delay(base);
+
+    // Step 4: 执行宏任务
+    log('--- 微任务清空，取一个宏任务执行 ---', '#a78bfa');
+    macro1.classList.add('running');
+    await delay(base * 0.8);
+    makeItem("输出: '2'", execQ).style.color = '#c4b5fd';
+    log("输出: 2", '#c4b5fd');
+    macro1.classList.add('done');
+    macro1.classList.remove('running');
+    await delay(base * 0.5);
+
+    log('--- 最终输出顺序: 1 → 4 → 3 → 2 ---', '#60a5fa');
+    running = false;
+  });
+
+  document.getElementById('btn-priority-reset').addEventListener('click', () => {
+    running = false;
+    syncQ.innerHTML = '';
+    microQ.innerHTML = '';
+    macroQ.innerHTML = '';
+    execQ.innerHTML = '';
+    logEl.innerHTML = '';
+  });
+})();
+
+// ==================== Panel 4: 事件循环 ====================
+(() => {
+  const steps = document.querySelectorAll('.loop-step');
+  const descEl = document.getElementById('loop-desc');
+  let playing = false;
+
+  const descriptions = {
+    1: '从宏任务队列中取出一个任务',
+    2: '执行这个宏任务（如 setTimeout 回调）',
+    3: '清空所有微任务（Promise.then 等，一个接一个直到队列空）',
+    4: '渲染页面（如果需要更新 UI）',
+    5: '回到步骤 1，取下一个宏任务',
+    6: '循环往复...这就是事件循环',
+  };
+
+  function getSpeed() { return parseInt(document.getElementById('loop-speed').value); }
+  document.getElementById('loop-speed').addEventListener('input', function() {
+    document.getElementById('loop-speed-label').textContent = this.value + 'x';
+  });
+
+  document.getElementById('btn-loop-start').addEventListener('click', async () => {
+    if (playing) return;
+    playing = true;
+
+    const order = [1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6]; // 两轮循环
+    for (const stepNum of order) {
+      if (!playing) break;
+      steps.forEach(s => s.classList.remove('active'));
+      const el = document.querySelector(`.loop-step[data-step="${stepNum}"]`);
+      el.classList.add('active');
+      descEl.textContent = descriptions[stepNum];
+      await new Promise(r => setTimeout(r, 1500 / getSpeed()));
+    }
+
+    steps.forEach(s => s.classList.remove('active'));
+    descEl.textContent = '循环永不停止...（直到页面关闭）';
+    playing = false;
+  });
+
+  document.getElementById('btn-loop-reset').addEventListener('click', () => {
+    playing = false;
+    steps.forEach(s => s.classList.remove('active'));
+    descEl.textContent = '点击"播放动画"开始';
+  });
+})();
+
+// ==================== Panel 5: 网络请求 ====================
+(() => {
+  const timeline = document.getElementById('net-timeline');
+  let playing = false;
+
+  const events = [
+    { time: '0ms', tag: 'js', tagLabel: 'JS线程', text: '调用 fetch(url)，注册 .then 回调，不等待' },
+    { time: '0ms', tag: 'js', tagLabel: 'JS线程', text: '继续执行后续同步代码...' },
+    { time: '', tag: 'net', tagLabel: '网络线程', text: '========== 浏览器网络线程在后台工作 ==========', highlight: true },
+    { time: '100ms', tag: 'net', tagLabel: '网络线程', text: 'DNS 解析中...' },
+    { time: '300ms', tag: 'net', tagLabel: '网络线程', text: 'TCP 连接建立' },
+    { time: '500ms', tag: 'net', tagLabel: '网络线程', text: '发送 HTTP 请求' },
+    { time: '2000ms', tag: 'net', tagLabel: '网络线程', text: '等待服务器响应...' },
+    { time: '4500ms', tag: 'net', tagLabel: '网络线程', text: '收到响应数据' },
+    { time: '4500ms', tag: 'micro', tagLabel: '事件循环', text: '.then 回调放入微任务队列' },
+    { time: '4500ms', tag: 'micro', tagLabel: '事件循环', text: '当前宏任务结束 → 清空微任务 → 回调执行：console.log("拿到了")' },
+  ];
+
+  function getSpeed() { return parseInt(document.getElementById('net-speed').value); }
+  document.getElementById('net-speed').addEventListener('input', function() {
+    document.getElementById('net-speed-label').textContent = this.value + 'x';
+  });
+
+  document.getElementById('btn-net-start').addEventListener('click', async () => {
+    if (playing) return;
+    playing = true;
+
+    // 清除之前的（保留 timeline-line）
+    timeline.querySelectorAll('.timeline-row').forEach(r => r.remove());
+
+    for (const ev of events) {
+      if (!playing) break;
+      const row = document.createElement('div');
+      row.className = 'timeline-row';
+
+      const dot = document.createElement('div');
+      dot.className = `timeline-dot ${ev.tag}`;
+
+      const time = document.createElement('div');
+      time.className = 'timeline-time';
+      time.textContent = ev.time;
+
+      const content = document.createElement('div');
+      content.className = 'timeline-content';
+      const tag = document.createElement('span');
+      tag.className = `tag tag-${ev.tag}`;
+      tag.textContent = ev.tagLabel;
+      content.appendChild(tag);
+      content.appendChild(document.createTextNode(ev.text));
+
+      row.appendChild(dot);
+      row.appendChild(time);
+      row.appendChild(content);
+      timeline.appendChild(row);
+
+      requestAnimationFrame(() => row.classList.add('visible'));
+      await new Promise(r => setTimeout(r, 1000 / getSpeed()));
+    }
+    playing = false;
+  });
+
+  document.getElementById('btn-net-reset').addEventListener('click', () => {
+    playing = false;
+    timeline.querySelectorAll('.timeline-row').forEach(r => r.remove());
+  });
+})();
+</script>
+</body>
+</html>
